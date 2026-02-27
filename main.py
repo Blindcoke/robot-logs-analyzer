@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from models import LogEntry, AnalysisResult
-from agents import LogIngestor, SmartContextEngine, ErrorDetector, Analyzer
+from agents import LogIngestor, SmartContextEngine, ErrorDetector, Analyzer, TaxonomyClassifier
 from simulator import LogGenerator
 
 
@@ -26,6 +26,7 @@ class AppState:
         self.context_engine: Optional[SmartContextEngine] = None
         self.error_detector: Optional[ErrorDetector] = None
         self.analyzer: Optional[Analyzer] = None
+        self.classifier: Optional[TaxonomyClassifier] = None
 
         self.analysis_results: List[AnalysisResult] = []
         self.is_monitoring: bool = False
@@ -76,27 +77,41 @@ async def on_error_context(context_logs: List[LogEntry]):
 
     result = await app_state.analyzer.analyze(context_logs)
     if result:
+        # Classify with SKILL.md taxonomy (OpenAI)
+        if app_state.classifier:
+            taxonomy = await app_state.classifier.classify(result)
+            if taxonomy:
+                result = result.model_copy(update={"taxonomy": taxonomy})
+
         app_state.analysis_results.append(result)
         # Keep only last 100 results
         if len(app_state.analysis_results) > 100:
             app_state.analysis_results = app_state.analysis_results[-100:]
 
         print(f"[RESULT] {result.severity.upper()}: {result.error_type}")
+        if result.taxonomy:
+            print(f"  [SKILL] {result.taxonomy.category} | event={result.taxonomy.event}")
         print(f"  Root cause: {result.root_cause[:80]}...")
         print(f"  Actions: {', '.join(result.corrective_actions[:2])}")
+
+        # Build broadcast payload with taxonomy for dashboard
+        data = {
+            "id": result.id,
+            "severity": result.severity,
+            "error_type": result.error_type,
+            "root_cause": result.root_cause,
+            "corrective_actions": result.corrective_actions,
+            "confidence": result.confidence,
+            "affected_systems": result.affected_systems,
+        }
+        if result.taxonomy:
+            data["taxonomy"] = result.taxonomy.model_dump()
+            data["taxonomy_line"] = result.taxonomy_line()
 
         # Broadcast analysis result
         await broadcast_to_websockets({
             "type": "analysis_complete",
-            "data": {
-                "id": result.id,
-                "severity": result.severity,
-                "error_type": result.error_type,
-                "root_cause": result.root_cause,
-                "corrective_actions": result.corrective_actions,
-                "confidence": result.confidence,
-                "affected_systems": result.affected_systems,
-            }
+            "data": data,
         })
 
 
@@ -132,6 +147,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize components
     app_state.analyzer = Analyzer()
+    app_state.classifier = TaxonomyClassifier()
 
     app_state.error_detector = ErrorDetector(
         error_keywords=settings.ERROR_KEYWORDS,
@@ -478,12 +494,22 @@ async def dashboard():
         .analysis-card.critical { border-left-color: #ff4444; }
         .analysis-card.high { border-left-color: #ff8844; }
         .analysis-card.medium { border-left-color: #ffcc44; }
+        .analysis-card.low { border-left-color: #66aa66; }
         .analysis-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .analysis-title { font-weight: bold; color: #fff; font-size: 1.1em; }
         .severity-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75em; font-weight: bold; text-transform: uppercase; }
         .severity-badge.critical { background: #ff4444; color: #fff; }
         .severity-badge.high { background: #ff8844; color: #fff; }
         .severity-badge.medium { background: #ffcc44; color: #000; }
+        .severity-badge.low { background: #66aa66; color: #fff; }
+        .category-badge { padding: 4px 10px; border-radius: 6px; font-size: 0.7em; font-weight: bold; text-transform: uppercase; margin-left: 8px; }
+        .category-badge.infrastructure { background: #5a4fcf; color: #fff; }
+        .category-badge.queue { background: #c45a11; color: #fff; }
+        .category-badge.auth { background: #a62a2a; color: #fff; }
+        .category-badge.performance { background: #2a7a4a; color: #fff; }
+        .category-badge.external { background: #6b4c9a; color: #fff; }
+        .category-badge.application { background: #2a5a8a; color: #fff; }
+        .taxonomy-line { font-family: 'Courier New', monospace; font-size: 0.8em; color: #00d4ff; background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 6px; margin: 8px 0; word-break: break-all; }
         .analysis-content { color: #aaa; font-size: 0.9em; line-height: 1.6; }
         .analysis-content strong { color: #ddd; }
         .actions-list { margin-top: 12px; padding-left: 20px; }
@@ -659,23 +685,38 @@ async def dashboard():
             const container = document.getElementById('analysis-results');
             const card = document.createElement('div');
             card.className = `analysis-card ${data.severity}`;
+            const taxonomy = data.taxonomy || {};
+            const taxonomyLine = data.taxonomy_line || '';
+            const cat = (taxonomy.category || '').toLowerCase();
+            const categoryBadge = taxonomy.category
+                ? `<span class="category-badge ${cat}">${taxonomy.category}</span>`
+                : '';
+            const taxonomyBlock = taxonomyLine
+                ? `<div class="taxonomy-line" title="SKILL.md classification">${escapeHtml(taxonomyLine)}</div>`
+                : '';
             card.innerHTML = `
                 <div class="analysis-header">
-                    <div class="analysis-title">${data.error_type}</div>
+                    <div class="analysis-title">${escapeHtml(data.error_type)}${categoryBadge}</div>
                     <span class="severity-badge ${data.severity}">${data.severity}</span>
                 </div>
+                ${taxonomyBlock}
                 <div class="analysis-content">
-                    <strong>Root Cause:</strong> ${data.root_cause}<br><br>
+                    <strong>Root Cause:</strong> ${escapeHtml(data.root_cause)}<br><br>
                     <strong>Corrective Actions:</strong>
-                    <ul class="actions-list">${data.corrective_actions.map(a => `<li>${a}</li>`).join('')}</ul>
+                    <ul class="actions-list">${(data.corrective_actions || []).map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>
                 </div>
                 <div class="analysis-meta">
-                    <span>🤖 Confidence: ${Math.round(data.confidence * 100)}%</span>
-                    <span>📦 Affected: ${data.affected_systems.join(', ') || 'N/A'}</span>
+                    <span>🤖 Confidence: ${Math.round((data.confidence || 0) * 100)}%</span>
+                    <span>📦 Affected: ${(data.affected_systems || []).join(', ') || 'N/A'}</span>
                 </div>
             `;
             container.insertBefore(card, container.firstChild);
             while (container.children.length > 10) container.removeChild(container.lastChild);
+        }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
         
         let isMonitoring = false;

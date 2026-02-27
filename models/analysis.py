@@ -9,6 +9,19 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class TaxonomyClassification(BaseModel):
+    """SKILL.md taxonomy: category, event, error_code, component, dependency."""
+
+    category: str = Field(
+        ...,
+        description="One of: INFRASTRUCTURE, QUEUE, AUTH, PERFORMANCE, EXTERNAL, APPLICATION",
+    )
+    event: Optional[str] = Field(None, description="Event type e.g. DB_TIMEOUT, QUEUE_OVERFLOW")
+    error_code: Optional[str] = Field(None, description="Error code e.g. CONNECTION_TIMEOUT")
+    component: Optional[str] = Field(None, description="System component e.g. database, message-queue")
+    dependency: Optional[str] = Field(None, description="Failing dependency e.g. payment-db, rabbitmq")
+
+
 class AnalysisResult(BaseModel):
     """Structured output from AI analysis of robot logs."""
 
@@ -27,7 +40,8 @@ class AnalysisResult(BaseModel):
                     "Verify frame IDs in configuration"
                 ],
                 "confidence": 0.92,
-                "context_logs": []
+                "context_logs": [],
+                "taxonomy": None,
             }
         }
     )
@@ -48,10 +62,17 @@ class AnalysisResult(BaseModel):
     context_logs: List[LogEntry] = Field(
         default_factory=list, description="Log entries that triggered analysis")
     metadata: Optional[dict] = Field(None, description="Additional metadata")
+    taxonomy: Optional[TaxonomyClassification] = Field(
+        None, description="SKILL.md classification (category, event, component, etc.)"
+    )
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return self.model_dump()
+        d = self.model_dump()
+        # Serialize taxonomy if present
+        if self.taxonomy:
+            d["taxonomy"] = self.taxonomy.model_dump()
+        return d
 
     def summary(self) -> str:
         """Get a human-readable summary."""
@@ -61,3 +82,16 @@ class AnalysisResult(BaseModel):
             f"Confidence: {self.confidence:.0%}\n"
             f"Actions: {', '.join(self.corrective_actions[:2])}"
         )
+
+    def taxonomy_line(self) -> Optional[str]:
+        """Format taxonomy per SKILL.md: [SEVERITY] CATEGORY | event=... | ..."""
+        if not self.taxonomy:
+            return None
+        t = self.taxonomy
+        severity_upper = self.severity.upper()
+        parts = [f"event={t.event or 'N/A'}", f"error_code={t.error_code or 'N/A'}"]
+        if t.component:
+            parts.append(f"component={t.component}")
+        if t.dependency:
+            parts.append(f"dependency={t.dependency}")
+        return f"[{severity_upper}] {t.category} | " + " | ".join(parts)
