@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Log Analysis - Live Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(90deg, #0f0f1a 0%, #1a1a2e 100%);
+            padding: 15px 30px;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #00d4ff;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .main-container {
+            display: flex;
+            height: calc(100vh - 70px);
+        }
+
+        /* Left Panel - Log Stream */
+        .left-panel {
+            width: 40%;
+            background: #0f0f1a;
+            border-right: 1px solid #2a2a4a;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            background: #1a1a2e;
+            padding: 15px 20px;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            color: #00d4ff;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .log-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 0.85em;
+        }
+
+        .log-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .log-stat.error {
+            color: #ff4444;
+        }
+
+        .log-stat.warn {
+            color: #ffcc44;
+        }
+
+        .log-stat.info {
+            color: #88ccff;
+        }
+
+        .log-stream {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            margin: 4px 0;
+            border-radius: 6px;
+            border-left: 3px solid transparent;
+            animation: slideIn 0.3s ease;
+            line-height: 1.4;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .log-entry.error {
+            background: rgba(255, 68, 68, 0.1);
+            border-left-color: #ff4444;
+            color: #ff8888;
+        }
+
+        .log-entry.warn {
+            background: rgba(255, 204, 68, 0.1);
+            border-left-color: #ffcc44;
+            color: #ffdd88;
+        }
+
+        .log-entry.info {
+            background: rgba(136, 204, 255, 0.1);
+            border-left-color: #88ccff;
+            color: #aaddff;
+        }
+
+        .log-entry .timestamp {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .log-entry .level {
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+
+        .log-entry.error .level {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .log-entry.warn .level {
+            background: #ffcc44;
+            color: #000;
+        }
+
+        .log-entry.info .level {
+            background: #88ccff;
+            color: #000;
+        }
+
+        .log-entry .node {
+            color: #00d4ff;
+        }
+
+        /* Right Panel - Agent Workflow */
+        .right-panel {
+            width: 60%;
+            background: #0a0a0f;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .agents-section {
+            padding: 20px;
+        }
+
+        .section-title {
+            color: #ffd700;
+            font-size: 1em;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Agent Network */
+        .agent-network {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .agent-card {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+            border: 2px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .agent-card:hover {
+            border-color: #3a3a6a;
+            transform: translateY(-2px);
+        }
+
+        .agent-card.active {
+            border-color: #00d4ff;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .agent-card.processing {
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+        }
+
+        .agent-card.detected {
+            border-color: #ff4444;
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.2);
+        }
+
+        .agent-card.analyzed {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+
+        .agent-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .agent-icon {
+            width: 45px;
+            height: 45px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            background: #0f0f1a;
+            border: 1px solid #2a2a4a;
+        }
+
+        .agent-card.active .agent-icon {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: #00d4ff;
+        }
+
+        .agent-card.processing .agent-icon {
+            background: rgba(255, 215, 0, 0.2);
+            border-color: #ffd700;
+        }
+
+        .agent-card.detected .agent-icon {
+            background: rgba(255, 68, 68, 0.2);
+            border-color: #ff4444;
+        }
+
+        .agent-card.analyzed .agent-icon {
+            background: rgba(0, 255, 136, 0.2);
+            border-color: #00ff88;
+        }
+
+        .agent-name {
+            font-weight: bold;
+            color: #fff;
+            font-size: 0.95em;
+        }
+
+        .agent-role {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #0f0f1a;
+            border-radius: 6px;
+            font-size: 0.85em;
+            color: #888;
+        }
+
+        .agent-status .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #444;
+        }
+
+        .agent-card.active .agent-status .indicator {
+            background: #00d4ff;
+            animation: blink 0.5s infinite;
+        }
+
+        .agent-card.processing .agent-status .indicator {
+            background: #ffd700;
+            animation: blink 0.5s infinite;
+        }
+
+        .agent-card.detected .agent-status .indicator {
+            background: #ff4444;
+        }
+
+        .agent-card.analyzed .agent-status .indicator {
+            background: #00ff88;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* Analysis Results */
+        .analysis-section {
+            padding: 0 20px 20px;
+        }
+
+        .analysis-card {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00ff88;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .analysis-card.critical {
+            border-left-color: #ff4444;
+        }
+
+        .analysis-card.high {
+            border-left-color: #ff8844;
+        }
+
+        .analysis-card.medium {
+            border-left-color: #ffcc44;
+        }
+
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .analysis-title {
+            font-weight: bold;
+            color: #fff;
+            font-size: 1.1em;
+        }
+
+        .severity-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .severity-badge.critical {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .severity-badge.high {
+            background: #ff8844;
+            color: #fff;
+        }
+
+        .severity-badge.medium {
+            background: #ffcc44;
+            color: #000;
+        }
+
+        .analysis-content {
+            color: #aaa;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+
+        .analysis-content strong {
+            color: #ddd;
+        }
+
+        .actions-list {
+            margin-top: 12px;
+            padding-left: 20px;
+        }
+
+        .actions-list li {
+            color: #88ccff;
+            margin: 5px 0;
+        }
+
+        .analysis-meta {
+            display: flex;
+            gap: 20px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #2a2a4a;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        /* Connection Lines */
+        .connections {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0f0f1a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a2a4a;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3a3a6a;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🤖 Robot Log Analysis Dashboard</h1>
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span>System Active</span>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Left Panel: Infinite Log Stream -->
+        <div class="left-panel">
+            <div class="panel-header">
+                <h2>📜 Live Log Stream</h2>
+                <div class="log-stats">
+                    <div class="log-stat error">
+                        <span>●</span> <span id="error-count">0</span> Errors
+                    </div>
+                    <div class="log-stat warn">
+                        <span>●</span> <span id="warn-count">0</span> Warnings
+                    </div>
+                    <div class="log-stat info">
+                        <span>●</span> <span id="info-count">0</span> Info
+                    </div>
+                </div>
+            </div>
+            <div class="log-stream" id="log-stream"></div>
+        </div>
+
+        <!-- Right Panel: Agent Workflow & Analysis -->
+        <div class="right-panel">
+            <div class="agents-section">
+                <div class="section-title">🔧 Auto-Detective Agents</div>
+                <div class="agent-network">
+                    <div class="agent-card" id="agent-ingestor">
+                        <div class="agent-header">
+                            <div class="agent-icon">👁</div>
+                            <div>
+                                <div class="agent-name">Log Ingestor</div>
+                                <div class="agent-role">File Watcher</div>
+                            </div>
+                        </div>
+                        <div class="agent-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Waiting for logs...</span>
+                        </div>
+                    </div>
+
+                    <div class="agent-card" id="agent-context">
+                        <div class="agent-header">
+                            <div class="agent-icon">📦</div>
+                            <div>
+                                <div class="agent-name">Context Engine</div>
+                                <div class="agent-role">Sliding Window</div>
+                            </div>
+                        </div>
+                        <div class="agent-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Buffer: 0 entries</span>
+                        </div>
+                    </div>
+
+                    <div class="agent-card" id="agent-detector">
+                        <div class="agent-header">
+                            <div class="agent-icon">🔍</div>
+                            <div>
+                                <div class="agent-name">Error Detector</div>
+                                <div class="agent-role">Pattern Matcher</div>
+                            </div>
+                        </div>
+                        <div class="agent-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Scanning...</span>
+                        </div>
+                    </div>
+
+                    <div class="agent-card" id="agent-analyzer">
+                        <div class="agent-header">
+                            <div class="agent-icon">🧠</div>
+                            <div>
+                                <div class="agent-name">AI Analyzer</div>
+                                <div class="agent-role">GPT-3.5 Turbo</div>
+                            </div>
+                        </div>
+                        <div class="agent-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Ready</span>
+                        </div>
+                    </div>
+
+                    <div class="agent-card" id="agent-correlator">
+                        <div class="agent-header">
+                            <div class="agent-icon">🔗</div>
+                            <div>
+                                <div class="agent-name">Correlator</div>
+                                <div class="agent-role">Pattern Linker</div>
+                            </div>
+                        </div>
+                        <div class="agent-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Idle</span>
+                        </div>
+                    </div>
+
+                    <div class="agent-card" id="agent-reporter">
+                        <div class="agent-header">
+                            <div class="agent-icon">📊</div>
+                            <div>
+                                <div class="agent-name">Reporter</div>
+                                <div class="agent-role">Result Formatter</div>
+                            </div>
+                        </div>
+                        <div class="agent-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Idle</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="analysis-section">
+                <div class="section-title">✅ Auto-Analysis Results</div>
+                <div id="analysis-results">
+                    <div class="analysis-card">
+                        <div class="analysis-content">
+                            Waiting for error detection... Agents are monitoring the log stream.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ROS Nodes and Messages
+        const nodes = [
+            '/move_base', '/amcl', '/robot_state_publisher',
+            '/controller_manager', '/hardware_interface', '/sensor_driver',
+            '/navigation', '/laser_scan_matcher', '/tf_broadcaster'
+        ];
+
+        const normalMessages = [
+            'Robot state updated successfully',
+            'Joint states published',
+            'Laser scan received',
+            'Odometry message processed',
+            'Transform published: base_link -> laser',
+            'Path computed successfully',
+            'Velocity command sent',
+            'Sensor data processed',
+            'Heartbeat signal sent',
+            'Goal received: x=1.5, y=2.0'
+        ];
+
+        const warningMessages = [
+            'Laser scan message delayed by 0.15s',
+            'Costmap update frequency is low',
+            'Controller oscillation detected',
+            'Transform from map to odom is old',
+            'Planning loop missed deadline',
+            'Sensor data buffer nearly full'
+        ];
+
+        const errorScenarios = [
+            {
+                context: ['Waiting for transform: map -> base_link', 'Transform lookup failed after 5.0s'],
+                error: 'Failed to get robot pose: Transform timeout',
+                type: 'Transform Timeout',
+                severity: 'high',
+                rootCause: 'TF tree not properly initialized between /map and /base_link frames',
+                actions: ['Check TF tree with rosrun tf view_frames', 'Restart static transform publisher', 'Verify frame IDs in configuration']
+            },
+            {
+                context: ['Planning to goal...', 'No valid path found after 10 attempts'],
+                error: 'Navigation failed: Goal unreachable',
+                type: 'Planning Failure',
+                severity: 'high',
+                rootCause: 'Navigation planner unable to find valid path to goal due to obstacles',
+                actions: ['Check costmap for obstacles', 'Verify goal is reachable', 'Adjust planner parameters']
+            },
+            {
+                context: ['Subscribing to /scan topic', 'No messages received for 5.0 seconds'],
+                error: 'Laser scan topic not receiving data',
+                type: 'Sensor Timeout',
+                severity: 'high',
+                rootCause: 'Sensor driver not publishing data or connection lost',
+                actions: ['Check sensor connections', 'Restart sensor driver node', 'Verify topic is being published']
+            },
+            {
+                context: ['Processing joint command', 'Joint 3 position: 2.1 (limit: 2.0)'],
+                error: 'Exception in controller: Joint limit exceeded',
+                type: 'Joint Limit',
+                severity: 'critical',
+                rootCause: 'Joint 3 position exceeded configured limit during motion execution',
+                actions: ['Adjust joint limits in configuration', 'Review motion planning parameters', 'Implement safety checks']
+            },
+            {
+                context: ['Initializing hardware interface', 'Attempting connection to 192.168.1.100:502'],
+                error: 'Connection refused: Unable to connect to hardware',
+                type: 'Hardware Connection',
+                severity: 'critical',
+                rootCause: 'Hardware interface cannot establish connection to robot controller',
+                actions: ['Check network connectivity', 'Verify hardware is powered on', 'Restart hardware interface']
+            },
+            {
+                context: ['Updating costmap', 'Footprint in collision at (1.2, 3.4)'],
+                error: 'Costmap collision: Robot in collision',
+                type: 'Collision Detected',
+                severity: 'critical',
+                rootCause: 'Robot footprint detected in collision with obstacle in costmap',
+                actions: ['Emergency stop robot', 'Clear costmap and re-localize', 'Check for physical obstacles']
+            }
+        ];
+
+        let stats = { error: 0, warn: 0, info: 0 };
+        let contextBuffer = [];
+        let isProcessingError = false;
+
+        function updateStats() {
+            document.getElementById('error-count').textContent = stats.error;
+            document.getElementById('warn-count').textContent = stats.warn;
+            document.getElementById('info-count').textContent = stats.info;
+        }
+
+        function setAgentState(agentId, state, message) {
+            const agent = document.getElementById(agentId);
+            agent.className = 'agent-card ' + state;
+            agent.querySelector('.status-text').textContent = message;
+        }
+
+        function addLogEntry(level, node, message) {
+            const container = document.getElementById('log-stream');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 23);
+            entry.innerHTML = `
+                <span class="timestamp">${timestamp}</span>
+                <span class="level">${level.toUpperCase()}</span>
+                <span class="node">[${node}]</span>
+                ${message}
+            `;
+
+            container.insertBefore(entry, container.firstChild);
+
+            // Keep only last 100 entries
+            while (container.children.length > 100) {
+                container.removeChild(container.lastChild);
+            }
+
+            stats[level]++;
+            updateStats();
+        }
+
+        async function processErrorScenario(scenario) {
+            if (isProcessingError) return;
+            isProcessingError = true;
+
+            // Step 1: Ingestor detects new logs
+            setAgentState('agent-ingestor', 'active', 'Reading logs...');
+            await sleep(300);
+
+            // Step 2: Context Engine builds window
+            setAgentState('agent-context', 'processing', 'Building context...');
+            contextBuffer = [...scenario.context, scenario.error];
+            await sleep(500);
+            setAgentState('agent-context', 'active', `Buffer: ${contextBuffer.length} entries`);
+
+            // Step 3: Error Detector finds error
+            setAgentState('agent-detector', 'detected', `Error: ${scenario.type}`);
+            await sleep(400);
+
+            // Step 4: AI Analyzer processes
+            setAgentState('agent-analyzer', 'processing', 'Analyzing with GPT...');
+            await sleep(1500);
+            setAgentState('agent-analyzer', 'analyzed', 'Analysis complete');
+
+            // Step 5: Correlator links patterns
+            setAgentState('agent-correlator', 'active', 'Linking patterns...');
+            await sleep(300);
+            setAgentState('agent-correlator', 'analyzed', 'Correlated');
+
+            // Step 6: Reporter formats result
+            setAgentState('agent-reporter', 'active', 'Formatting...');
+            addAnalysisResult(scenario);
+            await sleep(200);
+            setAgentState('agent-reporter', 'analyzed', 'Reported');
+
+            // Reset agents
+            await sleep(1000);
+            resetAgents();
+            isProcessingError = false;
+        }
+
+        function resetAgents() {
+            setAgentState('agent-ingestor', '', 'Waiting for logs...');
+            setAgentState('agent-context', '', `Buffer: ${contextBuffer.length} entries`);
+            setAgentState('agent-detector', '', 'Scanning...');
+            setAgentState('agent-analyzer', '', 'Ready');
+            setAgentState('agent-correlator', '', 'Idle');
+            setAgentState('agent-reporter', '', 'Idle');
+        }
+
+        function addAnalysisResult(scenario) {
+            const container = document.getElementById('analysis-results');
+
+            const card = document.createElement('div');
+            card.className = `analysis-card ${scenario.severity}`;
+
+            card.innerHTML = `
+                <div class="analysis-header">
+                    <div class="analysis-title">${scenario.type}</div>
+                    <span class="severity-badge ${scenario.severity}">${scenario.severity}</span>
+                </div>
+                <div class="analysis-content">
+                    <strong>Detected Error:</strong> ${scenario.error}<br><br>
+                    <strong>Root Cause:</strong> ${scenario.rootCause}<br><br>
+                    <strong>Corrective Actions:</strong>
+                    <ul class="actions-list">
+                        ${scenario.actions.map(a => `<li>${a}</li>`).join('')}
+                    </ul>
+                </div>
+                <div class="analysis-meta">
+                    <span>🤖 Analyzed by GPT-3.5</span>
+                    <span>📦 Context: ${scenario.context.length + 1} entries</span>
+                    <span>✓ Confidence: 95%</span>
+                </div>
+            `;
+
+            container.insertBefore(card, container.firstChild);
+
+            // Keep only last 10 results
+            while (container.children.length > 10) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function generateLog() {
+            const isError = Math.random() < 0.25;
+            const isWarning = !isError && Math.random() < 0.3;
+
+            if (isError) {
+                const scenario = errorScenarios[Math.floor(Math.random() * errorScenarios.length)];
+
+                // Generate context first
+                for (const ctx of scenario.context) {
+                    const node = nodes[Math.floor(Math.random() * nodes.length)];
+                    addLogEntry('info', node, ctx);
+                    await sleep(400);
+                }
+
+                // Generate error
+                const errorNode = nodes[Math.floor(Math.random() * nodes.length)];
+                addLogEntry('error', errorNode, scenario.error);
+
+                // Trigger agent workflow
+                processErrorScenario(scenario);
+
+            } else if (isWarning) {
+                const node = nodes[Math.floor(Math.random() * nodes.length)];
+                const message = warningMessages[Math.floor(Math.random() * warningMessages.length)];
+                addLogEntry('warn', node, message);
+            } else {
+                const node = nodes[Math.floor(Math.random() * nodes.length)];
+                const message = normalMessages[Math.floor(Math.random() * normalMessages.length)];
+                addLogEntry('info', node, message);
+            }
+        }
+
+        // Start infinite log generation
+        async function startLogStream() {
+            while (true) {
+                await generateLog();
+                await sleep(800 + Math.random() * 1200);
+            }
+        }
+
+        // Initialize
+        startLogStream();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Log Analysis Agent - Live Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #00d4ff;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #888;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .pipeline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 40px 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 15px;
+            border: 1px solid #2a2a4a;
+        }
+
+        .agent-box {
+            width: 180px;
+            padding: 20px;
+            background: #0f0f1a;
+            border: 2px solid #333;
+            border-radius: 10px;
+            text-align: center;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .agent-box.active {
+            border-color: #00d4ff;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .agent-box.processing {
+            border-color: #ffd700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+
+        .agent-box.error {
+            border-color: #ff4444;
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+        }
+
+        .agent-box.success {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+
+        .agent-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .agent-name {
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        .agent-status {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .arrow {
+            font-size: 2em;
+            color: #444;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 0.3;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        .arrow.flowing {
+            color: #00d4ff;
+        }
+
+        .log-stream {
+            background: #0f0f1a;
+            border: 1px solid #2a2a4a;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-stream h3 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .log-entry {
+            font-family: 'Courier New', monospace;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 5px;
+            font-size: 0.9em;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .log-entry.info {
+            background: #1a3a4a;
+            color: #88ccff;
+        }
+
+        .log-entry.warn {
+            background: #3a3a1a;
+            color: #ffcc44;
+        }
+
+        .log-entry.error {
+            background: #3a1a1a;
+            color: #ff6666;
+            border-left: 3px solid #ff4444;
+        }
+
+        .analysis-panel {
+            background: #0f0f1a;
+            border: 1px solid #2a2a4a;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .analysis-panel h3 {
+            color: #00ff88;
+            margin-bottom: 15px;
+        }
+
+        .analysis-result {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #00ff88;
+        }
+
+        .analysis-result.critical {
+            border-left-color: #ff4444;
+        }
+
+        .analysis-result.high {
+            border-left-color: #ff8844;
+        }
+
+        .analysis-result.medium {
+            border-left-color: #ffcc44;
+        }
+
+        .severity-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .severity-badge.critical {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .severity-badge.high {
+            background: #ff8844;
+            color: #fff;
+        }
+
+        .severity-badge.medium {
+            background: #ffcc44;
+            color: #000;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        .btn-start {
+            background: #00ff88;
+            color: #0a0a0f;
+        }
+
+        .btn-start:hover {
+            background: #00cc6a;
+            transform: translateY(-2px);
+        }
+
+        .btn-stop {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .btn-stop:hover {
+            background: #cc3333;
+            transform: translateY(-2px);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: #1a1a2e;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid #2a2a4a;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .stat-label {
+            color: #888;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .context-window {
+            background: #0f0f1a;
+            border: 1px solid #2a2a4a;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .context-window h3 {
+            color: #ffd700;
+            margin-bottom: 15px;
+        }
+
+        .context-entries {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .context-entry {
+            padding: 8px 12px;
+            background: #1a1a2e;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            opacity: 0.7;
+            transition: all 0.3s ease;
+        }
+
+        .context-entry.highlight {
+            opacity: 1;
+            background: #2a2a4a;
+            border-left: 3px solid #ffd700;
+        }
+
+        .data-flow {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .flow-particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #00d4ff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #00d4ff;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🤖 Robot Log Analysis Agent</h1>
+        <p>Real-time Error Detection & AI-Powered Root Cause Analysis</p>
+    </div>
+
+    <div class="container">
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-logs">0</div>
+                <div class="stat-label">Total Logs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="errors-detected">0</div>
+                <div class="stat-label">Errors Detected</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="analyses">0</div>
+                <div class="stat-label">AI Analyses</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="context-size">0</div>
+                <div class="stat-label">Context Window</div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button class="btn-start" onclick="startSimulation()">▶ Start Simulation</button>
+            <button class="btn-stop" onclick="stopSimulation()">⏹ Stop</button>
+        </div>
+
+        <!-- Agent Pipeline -->
+        <div class="pipeline">
+            <div class="agent-box" id="agent-generator">
+                <div class="agent-icon">📝</div>
+                <div class="agent-name">Log Generator</div>
+                <div class="agent-status">Idle</div>
+            </div>
+            <div class="arrow" id="arrow-1">→</div>
+            <div class="agent-box" id="agent-ingestor">
+                <div class="agent-icon">👁</div>
+                <div class="agent-name">Log Ingestor</div>
+                <div class="agent-status">Idle</div>
+            </div>
+            <div class="arrow" id="arrow-2">→</div>
+            <div class="agent-box" id="agent-context">
+                <div class="agent-icon">📦</div>
+                <div class="agent-name">Context Engine</div>
+                <div class="agent-status">Idle</div>
+            </div>
+            <div class="arrow" id="arrow-3">→</div>
+            <div class="agent-box" id="agent-detector">
+                <div class="agent-icon">🔍</div>
+                <div class="agent-name">Error Detector</div>
+                <div class="agent-status">Idle</div>
+            </div>
+            <div class="arrow" id="arrow-4">→</div>
+            <div class="agent-box" id="agent-analyzer">
+                <div class="agent-icon">🧠</div>
+                <div class="agent-name">AI Analyzer</div>
+                <div class="agent-status">Idle</div>
+            </div>
+        </div>
+
+        <!-- Context Window -->
+        <div class="context-window">
+            <h3>📦 Context Engine (Sliding Window)</h3>
+            <div class="context-entries" id="context-entries">
+                <div class="context-entry">Waiting for logs...</div>
+            </div>
+        </div>
+
+        <!-- Log Stream -->
+        <div class="log-stream">
+            <h3>📜 Live Log Stream</h3>
+            <div id="log-entries"></div>
+        </div>
+
+        <!-- Analysis Results -->
+        <div class="analysis-panel">
+            <h3>✅ AI Analysis Results</h3>
+            <div id="analysis-results">
+                <p style="color: #666;">Start simulation to see AI analysis...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ROS Nodes and Messages
+        const nodes = [
+            '/move_base', '/amcl', '/robot_state_publisher',
+            '/controller_manager', '/hardware_interface', '/sensor_driver',
+            '/navigation', '/laser_scan_matcher'
+        ];
+
+        const normalMessages = [
+            'Robot state updated successfully',
+            'Joint states published',
+            'Laser scan received',
+            'Odometry message processed',
+            'Transform published: base_link -> laser',
+            'Path computed successfully',
+            'Velocity command sent',
+            'Sensor data processed',
+            'Heartbeat signal sent'
+        ];
+
+        const warningMessages = [
+            'Laser scan message delayed by 0.15s',
+            'Costmap update frequency is low',
+            'Controller oscillation detected',
+            'Transform from map to odom is old',
+            'Planning loop missed deadline'
+        ];
+
+        const errorScenarios = [
+            {
+                context: ['Waiting for transform: map -> base_link', 'Transform lookup failed after 5.0s'],
+                error: 'Failed to get robot pose: Transform timeout',
+                type: 'Transform Timeout',
+                severity: 'high'
+            },
+            {
+                context: ['Planning to goal...', 'No valid path found after 10 attempts'],
+                error: 'Navigation failed: Goal unreachable',
+                type: 'Planning Failure',
+                severity: 'high'
+            },
+            {
+                context: ['Subscribing to /scan topic', 'No messages received for 5.0 seconds'],
+                error: 'Laser scan topic not receiving data',
+                type: 'Sensor Timeout',
+                severity: 'high'
+            },
+            {
+                context: ['Processing joint command', 'Joint 3 position: 2.1 (limit: 2.0)'],
+                error: 'Exception in controller: Joint limit exceeded',
+                type: 'Joint Limit',
+                severity: 'critical'
+            },
+            {
+                context: ['Initializing hardware interface', 'Attempting connection to 192.168.1.100:502'],
+                error: 'Connection refused: Unable to connect to hardware',
+                type: 'Hardware Connection',
+                severity: 'critical'
+            }
+        ];
+
+        let simulationRunning = false;
+        let totalLogs = 0;
+        let errorsDetected = 0;
+        let analyses = 0;
+        let contextWindow = [];
+        const MAX_CONTEXT = 10;
+
+        function updateStats() {
+            document.getElementById('total-logs').textContent = totalLogs;
+            document.getElementById('errors-detected').textContent = errorsDetected;
+            document.getElementById('analyses').textContent = analyses;
+            document.getElementById('context-size').textContent = contextWindow.length;
+        }
+
+        function setAgentStatus(agentId, status, type = '') {
+            const agent = document.getElementById(agentId);
+            agent.className = 'agent-box ' + type;
+            agent.querySelector('.agent-status').textContent = status;
+        }
+
+        function setArrowFlowing(arrowId, flowing) {
+            const arrow = document.getElementById(arrowId);
+            arrow.className = flowing ? 'arrow flowing' : 'arrow';
+        }
+
+        function addLogEntry(level, node, message) {
+            const container = document.getElementById('log-entries');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 23);
+            entry.textContent = `[${timestamp}] [${level.toUpperCase()}] [${node}]: ${message}`;
+
+            container.insertBefore(entry, container.firstChild);
+
+            // Keep only last 20 entries
+            while (container.children.length > 20) {
+                container.removeChild(container.lastChild);
+            }
+
+            totalLogs++;
+            updateStats();
+        }
+
+        function updateContextWindow(level, node, message, highlight = false) {
+            contextWindow.push({ level, node, message, highlight });
+            if (contextWindow.length > MAX_CONTEXT) {
+                contextWindow.shift();
+            }
+
+            const container = document.getElementById('context-entries');
+            container.innerHTML = contextWindow.map(entry => `
+                <div class="context-entry ${entry.highlight ? 'highlight' : ''}">
+                    [${entry.level.toUpperCase()}] [${entry.node}] ${entry.message}
+                </div>
+            `).join('');
+
+            updateStats();
+        }
+
+        function addAnalysisResult(scenario) {
+            const container = document.getElementById('analysis-results');
+
+            const result = document.createElement('div');
+            result.className = `analysis-result ${scenario.severity}`;
+
+            const actions = [
+                'Check system logs for related errors',
+                'Restart affected ROS nodes',
+                'Verify configuration parameters'
+            ];
+
+            result.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <strong style="color: #fff; font-size: 1.1em;">${scenario.type}</strong>
+                    <span class="severity-badge ${scenario.severity}">${scenario.severity}</span>
+                </div>
+                <p style="color: #ccc; margin-bottom: 10px;">
+                    <strong>Root Cause:</strong> AI analysis of context window identified the issue
+                </p>
+                <div style="background: #0f0f1a; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                    <strong style="color: #888; font-size: 0.9em;">Corrective Actions:</strong>
+                    <ul style="margin: 5px 0 0 20px; color: #aaa;">
+                        ${actions.map(a => `<li>${a}</li>`).join('')}
+                    </ul>
+                </div>
+                <div style="color: #666; font-size: 0.85em;">
+                    Confidence: 95% | Affected: ${nodes[Math.floor(Math.random() * nodes.length)]}
+                </div>
+            `;
+
+            container.insertBefore(result, container.firstChild);
+
+            // Keep only last 5 results
+            while (container.children.length > 5) {
+                container.removeChild(container.lastChild);
+            }
+
+            analyses++;
+            updateStats();
+        }
+
+        async function simulateLogFlow() {
+            // Step 1: Log Generator
+            setAgentStatus('agent-generator', 'Generating...', 'active');
+            setArrowFlowing('arrow-1', true);
+
+            const isError = Math.random() < 0.3;
+            let scenario = null;
+
+            if (isError) {
+                scenario = errorScenarios[Math.floor(Math.random() * errorScenarios.length)];
+
+                // Generate context messages
+                for (const ctx of scenario.context) {
+                    const node = nodes[Math.floor(Math.random() * nodes.length)];
+                    addLogEntry('info', node, ctx);
+                    updateContextWindow('info', node, ctx);
+                    await sleep(300);
+                }
+
+                // Generate error
+                const errorNode = nodes[Math.floor(Math.random() * nodes.length)];
+                addLogEntry('error', errorNode, scenario.error);
+                updateContextWindow('error', errorNode, scenario.error, true);
+                errorsDetected++;
+            } else if (Math.random() < 0.3) {
+                // Warning
+                const node = nodes[Math.floor(Math.random() * nodes.length)];
+                const message = warningMessages[Math.floor(Math.random() * warningMessages.length)];
+                addLogEntry('warn', node, message);
+                updateContextWindow('warn', node, message);
+            } else {
+                // Normal log
+                const node = nodes[Math.floor(Math.random() * nodes.length)];
+                const message = normalMessages[Math.floor(Math.random() * normalMessages.length)];
+                addLogEntry('info', node, message);
+                updateContextWindow('info', node, message);
+            }
+
+            await sleep(200);
+            setAgentStatus('agent-generator', 'Idle', '');
+
+            // Step 2: Log Ingestor
+            setAgentStatus('agent-ingestor', 'Parsing...', 'processing');
+            setArrowFlowing('arrow-2', true);
+            await sleep(300);
+            setAgentStatus('agent-ingestor', 'Idle', '');
+
+            // Step 3: Context Engine
+            setAgentStatus('agent-context', 'Buffering...', 'processing');
+            setArrowFlowing('arrow-3', true);
+            await sleep(300);
+            setAgentStatus('agent-context', `Size: ${contextWindow.length}`, '');
+
+            // Step 4: Error Detector
+            if (isError) {
+                setAgentStatus('agent-detector', 'Error Found!', 'error');
+                setArrowFlowing('arrow-4', true);
+                await sleep(300);
+
+                // Step 5: AI Analyzer
+                setAgentStatus('agent-analyzer', 'Analyzing...', 'processing');
+                await sleep(1500); // Simulate AI processing
+                addAnalysisResult(scenario);
+                setAgentStatus('agent-analyzer', 'Complete', 'success');
+                await sleep(500);
+                setAgentStatus('agent-analyzer', 'Idle', '');
+            } else {
+                setAgentStatus('agent-detector', 'No Error', '');
+                setArrowFlowing('arrow-4', false);
+            }
+
+            setAgentStatus('agent-detector', 'Idle', '');
+            setArrowFlowing('arrow-1', false);
+            setArrowFlowing('arrow-2', false);
+            setArrowFlowing('arrow-3', false);
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function startSimulation() {
+            if (simulationRunning) return;
+
+            simulationRunning = true;
+            document.querySelector('.btn-start').textContent = '⏸ Pause';
+
+            while (simulationRunning) {
+                await simulateLogFlow();
+                await sleep(2000 + Math.random() * 2000);
+            }
+        }
+
+        function stopSimulation() {
+            simulationRunning = false;
+            document.querySelector('.btn-start').textContent = '▶ Start Simulation';
+
+            // Reset all agents
+            ['agent-generator', 'agent-ingestor', 'agent-context',
+                'agent-detector', 'agent-analyzer'].forEach(id => {
+                    setAgentStatus(id, 'Idle', '');
+                });
+
+            [1, 2, 3, 4].forEach(i => setArrowFlowing(`arrow-${i}`, false));
+        }
+
+        // Initialize
+        updateStats();
+    </script>
+</body>
+
+</html>
